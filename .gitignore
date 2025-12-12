@@ -1,0 +1,5 @@
+*.mp3
+*.bin
+*.safetensors
+output/
+huggingface_cache/
