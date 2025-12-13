@@ -16,17 +16,23 @@ import typing
 import collections
 # 注意：Colab 环境可能不需要 pytorch_lightning 相关的白名单，但为了安全起见，我们添加常用的 omegaconf 依赖
 import omegaconf.dictconfig
+# 确保导入这个新的缺失模块
+import torch.torch_version
 
 # --- 启用核心白名单 (解决 Pyannote 模型加载的 WeightsUnpickler error) ---
 if hasattr(torch.serialization, 'add_safe_globals'):
     torch.serialization.add_safe_globals([
-        # omegaconf 依赖 (核心报错源)
+        # omegaconf 依赖 (旧的报错源，已解决)
         omegaconf.listconfig.ListConfig, 
         omegaconf.base.ContainerMetadata,
         omegaconf.nodes.AnyNode,
         omegaconf.base.Metadata,
         omegaconf.dictconfig.DictConfig,
-        # 其他 Python 内置类型 (通常安全)
+        
+        # 新增项：解决 torch.torch_version 报错
+        torch.torch_version.TorchVersion, 
+        
+        # 其他 Python 内置类型 
         list,
         dict,
         int,
