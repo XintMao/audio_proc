@@ -1,17 +1,17 @@
-### Key Components
+ Key Components
 - **Forced Alignment (FA):** Uses WhisperX (large-v2) and Wav2Vec2.0 to generate word-level timestamps from the input transcript.
 - **Segmentation:** Re-segments alignment results by a maximum duration threshold (30.0s), ensuring cuts only occur at word boundaries.
 - **Speaker Diarization (SD):** Leverages Pyannote.audio to identify and label speaker turns across the full audio file.
 - **Post-Processing:** Merges aligned text segments with speaker diarization results to produce the final formatted output.
 
-## Setup and Installation
+Setup and Installation
 Due to known **dependency conflicts** between WhisperX and recent PyTorch versions, a dedicated, stable environment is required for reliable execution.
 
-### 1. Recommended Environment
+1. Recommended Environment
 - Python Version: 3.10 (tested and verified for compatibility)
 - PyTorch Version: 2.7.1 (CUDA 11.8 base, optimized for stability)
 
-### 2. Environment Setup
+Environment Setup
 ```bash
 # Create a dedicated Conda environment
 conda create -n stable_armenian_env python=3.10 -y
