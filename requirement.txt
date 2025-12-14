@@ -1,17 +1,29 @@
-# requirements.txt - 亚美尼亚语音频处理项目配置 (RTX 4090D)
-# -------------------------------------------------------------
-# 核心深度学习框架 (必须与你的 4090D 上的 CUDA 版本兼容)
-# 我们推荐使用 2.5.x 版本的 PyTorch，它对新硬件的支持很好。
-# 必须使用 cu121 索引安装，以确保获得正确的 GPU 版本。
-torch==2.5.1
-torchvision==0.20.1
-torchaudio==2.5.1
+# use 'pip install -r requirements.txt --index-url https://download.pytorch.org/whl/cu118' to install
 
-# 核心应用库 (使用最新的稳定版本)
+torch==2.7.1
+torchvision==0.22.1
+torchaudio==2.7.1
+
 whisperx==3.7.4
 pyannote-audio==3.4.0
 
-# Pyannote/Whisperx 依赖
+transformers
+sentencepiece
+packaging
+requests
+tqdm
+PyYAML
+rich
+joblib
+regex
+cycler
+fonttools
+kiwisolver
+pyparsing
+python-dateutil
+pandas==2.2.3 
+
+librosa
+soundfile
 omegaconf
 pytorch-lightning
-pandas==2.2.3  # 锁定 pandas 版本以解决常见的依赖冲突
