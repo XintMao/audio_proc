@@ -1,30 +1,32 @@
-echo "--- 1/8: Activating existing environment 'audio_clean' ---"
-source activate audio_clean
+ENV_NAME="stable_armenian_env"
+PYTHON_VERSION="3.10"
 
-rm -rf ~/.cache/huggingface/hub/
+if conda info --envs | grep -q "${ENV_NAME}"; then
+    echo "Deleting existing environment ${ENV_NAME}..."
+    conda remove -n ${ENV_NAME} --all -y
+fi
 
-echo "Installing git-lfs..."
-conda install -c conda-forge git-lfs -y
-git lfs install
+echo "--- 1/3: Creating stable Conda environment (${PYTHON_VERSION}) ---"
+conda create -n ${ENV_NAME} python=${PYTHON_VERSION} -y
+source activate ${ENV_NAME}
 
-echo "--- 2/8: Installing Torch 2.8.0 / Torchaudio 2.8.0 (via --user) ---"
-pip install torch==2.8.0 torchaudio==2.8.0 --user
+PT_INDEX_URL="https://download.pytorch.org/whl/cu118"
+WHISPERX_VERSION="3.7.4"
+PYANNOTE_VERSION="3.4.0"
 
-echo "--- 3/8: Installing compatible TorchVision 0.23.0 (via --user) ---"
-pip install torchvision==0.23.0 --user
+echo "--- 2/3: Installing PyTorch Core Dependencies (Stable 2.7.1 + cu118) ---"
+pip install torch==2.7.1 torchaudio==2.7.1 torchvision==0.22.1 --index-url ${PT_INDEX_URL}
 
-echo "--- 4/8: Installing missing common Python dependencies (via --user) ---"
-pip install packaging requests tqdm PyYAML rich joblib regex sentencepiece cycler fonttools kiwisolver pyparsing python-dateutil --user
+echo "--- 3/3: Installing WhisperX, Pyannote, and Utilities ---"
+pip install whisperx==${WHISPERX_VERSION} \
+            pyannote.audio==${PYANNOTE_VERSION} \
+            transformers \
+            librosa \
+            soundfile \
+            -i https://pypi.org/simple
 
-echo "--- 5/8: Installing Pyannote audio (via --user) ---"
-pip install pyannote-audio==3.4.0 --user
+echo "--- Final Step: Run Hugging Face Login ---"
+pip install -U 'huggingface-hub[cli]'
+huggingface-cli login
 
-echo "--- 6/8: Installing omegaconf and pytorch-lightning (via --user) ---"
-pip install omegaconf pytorch-lightning --user
-
-echo "--- 7/8: Installing WhisperX from GitHub (via --user) ---"
-pip install git+https://github.com/m-bain/whisperx.git --user
-
-echo "--- 8/8: Running the processing pipeline ---"
-echo "✅ Dependencies installed and synchronized. Starting script execution."
-python process_pipeline.py
+echo "Environment ${ENV_NAME} setup complete. Run 'python process_pipeline.py' after successful login."
