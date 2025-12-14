@@ -5,9 +5,12 @@ from pyannote.audio import Pipeline
 import json
 import os
 from pyannote.core import Segment, Annotation
-import torchaudio 
+import torchaudio
+import time
+from transformers import AutoTokenizer
+import librosa
 
-# --- 必须导入所有用于白名单的模块 (解决 PyTorch 2.6+ 的安全加载问题) ---
+# Required imports for PyTorch 2.6+ safe loading (fix WeightsUnpickler error)
 import torch.serialization 
 import omegaconf.listconfig 
 import omegaconf.base
@@ -15,61 +18,61 @@ import omegaconf.nodes
 import typing
 import collections
 import omegaconf.dictconfig
-import torch.torch_version # 核心修复
+import torch.torch_version
+import pyannote.audio.core.model
+import pyannote.audio.core.task
 
-# --- 启用核心白名单 (解决 Pyannote 模型加载的 WeightsUnpickler error) ---
+# Enable safe globals for Pyannote model loading
 if hasattr(torch.serialization, 'add_safe_globals'):
     torch.serialization.add_safe_globals([
-        # omegaconf 依赖
+        # Omegaconf dependencies
         omegaconf.listconfig.ListConfig, 
         omegaconf.base.ContainerMetadata,
         omegaconf.nodes.AnyNode,
         omegaconf.base.Metadata,
         omegaconf.dictconfig.DictConfig,
         
-        # 新增项：解决 torch.torch_version 报错
+        # Pyannote core fixes
         torch.torch_version.TorchVersion, 
+        pyannote.audio.core.model.Introspection,
+        pyannote.audio.core.task.Specifications,
+        pyannote.audio.core.task.Problem,
+        pyannote.audio.core.task.Resolution,
         
-        # 其他 Python 内置类型 
+        # Python built-in types
         list,
         dict,
         int,
         typing.Any,
         collections.defaultdict,
     ])
-    print("已启用核心白名单以解决 Pyannote 模型的安全加载问题。")
+    print("Enabled core safe globals for Pyannote model loading.")
 
-# --- 配置参数 ---
+# Configuration
 BASE_FILENAME = "01281_ARM" 
 AUDIO_PATH = f"./data/{BASE_FILENAME}.mp3" 
 TRANSCRIPT_PATH = f"./data/{BASE_FILENAME}.txt"
 OUTPUT_DIR = "./output"
-LANGUAGE = "hy" # 亚美尼亚语
-MAX_SEGMENT_DURATION = 30.0 # 导师要求的最大时长 (秒)
+LANGUAGE = "hy"  # Armenian
+MAX_SEGMENT_DURATION = 30.0  # Max segment length (seconds)
 
-# 确保输出目录存在
+# Create output dir if not exists
 os.makedirs(OUTPUT_DIR, exist_ok=True)
-print(f"--- 配置信息 ---")
-print(f"CUDA 是否可用: {torch.cuda.is_available()}")
-print(f"目标语言: {LANGUAGE} (亚美尼亚语)")
+print(f"--- Configuration ---")
+print(f"CUDA available: {torch.cuda.is_available()}")
+print(f"Target language: {LANGUAGE}")
 
-# GPU 配置 (Colab T4 推荐配置)
+# GPU config (optimized for RTX 4090D)
 device = "cuda" if torch.cuda.is_available() else "cpu"
 batch_size = 16 
 compute_type = "float16" if torch.cuda.is_available() else "float32"
 
-
 # -------------------------------------------------------------
-# --- 3. 核心分段与格式化函数定义 ---
+# Core segment splitting and formatting functions
 # -------------------------------------------------------------
 
 def split_segments_by_length(aligned_data, max_duration=MAX_SEGMENT_DURATION):
-    """
-    根据导师提供的逻辑，将 WhisperX 的对齐结果重新分段。
-    目标：确保每个片段不超过 max_duration，并在单词边界处切割。
-    """
-    
-    # 1. 将所有词语展平为一个列表
+    """Split aligned segments by max duration, cutting at word boundaries"""
     all_words = []
     for segment in aligned_data.get('segments', []):
         for word in segment.get('words', []):
@@ -78,57 +81,42 @@ def split_segments_by_length(aligned_data, max_duration=MAX_SEGMENT_DURATION):
     if not all_words:
         return {'segments': []}
 
-    # 2. 生成 (start, end) 边界列表 (导师的核心逻辑)
+    # Generate (start, end) boundaries
     chunks = []
     current_chunk_start = all_words[0]['start']
     prev_word = None
 
     for word in all_words:
         word_end = word["end"]
-
-        # 如果加入这个词会超过最大长度限制
         if word_end - current_chunk_start > max_duration:
-            # 确保这不是第一个词（防止prev_word是None）
             if prev_word is not None:
-                # 在前一个词的结束时间处关闭当前块
                 chunks.append((current_chunk_start, prev_word["end"]))
-                # 新的块从前一个词的结束时间开始
-                current_chunk_start = prev_word["end"] 
-        
+                current_chunk_start = prev_word["end"]
+            prev_word = word
         prev_word = word
 
-    # 添加最后一个块
-    if prev_word is not None:
-        chunks.append((current_chunk_start, prev_word["end"]))
+    # Add final chunk
+    if prev_word is not None and (not chunks or chunks[-1][1] != prev_word["end"]):
+         chunks.append((current_chunk_start, prev_word["end"]))
     
-    # 3. 根据边界列表重建 JSON 片段结构
+    # Rebuild segments from boundaries
     new_segments = []
-    word_index = 0
-    
     for start_time, end_time in chunks:
-        segment_words = []
+        current_chunk_words = [w for w in all_words if w['start'] >= start_time and w['end'] <= end_time]
         
-        # 从当前位置开始，找到所有落在新边界内的词
-        while word_index < len(all_words) and all_words[word_index]['end'] <= end_time:
-            segment_words.append(all_words[word_index])
-            word_index += 1
-            
-        if segment_words:
-            # 构造新的片段文本
-            new_text = " ".join([w['word'] for w in segment_words])
-
+        if current_chunk_words:
+            new_text = " ".join([w['word'] for w in current_chunk_words])
             new_segments.append({
                 'start': start_time,
                 'end': end_time,
                 'text': new_text,
-                'words': segment_words # 保留 words 列表
+                'words': current_chunk_words
             })
             
     return {'segments': new_segments}
 
-
 def format_time_srt(seconds):
-    """将秒转换为 HH:MM:SS,mmm 格式"""
+    """Convert seconds to HH:MM:SS,mmm SRT format"""
     ms = int((seconds - int(seconds)) * 1000)
     s = int(seconds) % 60
     m = int(seconds / 60) % 60
@@ -136,8 +124,7 @@ def format_time_srt(seconds):
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}" 
 
 def merge_and_format(alignment_path, rttm_path):
-    """核心逻辑：将带时间戳的片段与说话人分段进行时间重叠匹配。"""
-    
+    """Merge time-aligned segments with speaker diarization results"""
     with open(alignment_path, 'r', encoding='utf-8') as f:
         aligned_data = json.load(f)
     alignment_segments = aligned_data.get('segments', []) 
@@ -175,8 +162,7 @@ def merge_and_format(alignment_path, rttm_path):
                     speaker = spk
             
             if speaker != 'UNKNOWN':
-                # pyannote 从 0 开始编号，我们显示从 1 开始
-                speaker_id_num = int(speaker.split('_')[-1]) + 1 
+                speaker_id_num = int(speaker.split('_')[-1]) + 1  # Convert 0-based to 1-based
                 speaker_label = f"[Speaker {speaker_id_num}]" 
             else:
                 speaker_label = '[UNKNOWN]'
@@ -192,107 +178,143 @@ def merge_and_format(alignment_path, rttm_path):
     return final_output
 
 # -------------------------------------------------------------
-# --- 1. 运行 WhisperX 强制对齐 (Forced Alignment) ---
+# 1. Run WhisperX Forced Alignment
 # -------------------------------------------------------------
-print("\n--- 1. 运行 WhisperX 强制对齐 (Forced Alignment) ---")
+print("\n--- 1. Running WhisperX Forced Alignment ---")
 
-# 定义分段结果文件的路径，便于后续步骤引用
+# Output file paths
 alignment_json_path = os.path.join(OUTPUT_DIR, f"{BASE_FILENAME}_alignment.json")
 resegmented_json_path = os.path.join(OUTPUT_DIR, f"{BASE_FILENAME}_resegmented_alignment.json")
 rttm_path = os.path.join(OUTPUT_DIR, f"{BASE_FILENAME}_diarization.rttm")
 
-
 try:
-    # 1. 加载 Whisper 模型
+    # Load Whisper ASR model
+    print("Loading Whisper ASR model...")
     model = whisperx.load_model("large-v2", device, compute_type=compute_type)
-    audio = whisperx.load_audio(AUDIO_PATH) 
+    audio_data, sr = librosa.load(AUDIO_PATH, sr=16000)
+    audio = audio_data
 
-    # 2. 定义 Wav2Vec2.0 对齐模型的 ID
+    # Critical fix: Get audio duration via torchaudio
+    metadata_info = torchaudio.info(AUDIO_PATH) 
+    audio_duration = metadata_info.num_frames / metadata_info.sample_rate 
+    print(f"Audio total duration: {audio_duration:.2f} seconds")
+    
+    # Armenian alignment model ID
     ARMENIAN_ALIGN_MODEL_ID = "facebook/wav2vec2-base"
     
-    # 3. 加载 Wav2Vec2.0 模型进行对齐
+    # Load Wav2Vec2 alignment model
+    print("Loading Wav2Vec2 alignment model...")
     model_a, metadata = whisperx.load_align_model(
         language_code=LANGUAGE, 
         model_name=ARMENIAN_ALIGN_MODEL_ID, 
         device=device
     )
 
+    # Critical fix: Manually load tokenizer and wrap in dict
+    align_tokenizer = AutoTokenizer.from_pretrained(ARMENIAN_ALIGN_MODEL_ID)
+    print("Successfully loaded tokenizer manually.")
+    align_model_meta = {'tokenizer': align_tokenizer}  # Fix 'object is not subscriptable' error
+    
+    # Read transcript for alignment
     with open(TRANSCRIPT_PATH, 'r', encoding='utf-8') as f:
-        text_to_align = f.read()
+        text_to_align = f.read().strip()
 
-    align_input = [{'text': text_to_align}]
+    # Build required input format for whisperx.align
+    print("Constructing alignment input format...")
+    align_input = {
+        'segments': [
+            {
+                'text': text_to_align,
+                'start': 0,      # Required for forced alignment
+                'end': audio_duration  # Use actual audio duration
+            }
+        ],
+        'language': LANGUAGE  # Mandatory language info
+    }
 
-    # 执行强制对齐
-    result_aligned = whisperx.align(align_input, model_a, metadata, audio, device) 
+    # Run forced alignment
+    print("Starting forced alignment...")
+    start_time_align = time.time()
+    result_aligned = whisperx.align(
+        align_input, 
+        model_a, 
+        align_model_meta,  # Pass wrapped tokenizer dict
+        audio, 
+        device
+    ) 
+    end_time_align = time.time()
+    print(f"Forced alignment completed in {end_time_align - start_time_align:.2f} seconds")
 
-    # 保存原始对齐结果 (包含词级别时间戳)
+    # Save raw alignment results (word-level timestamps)
     with open(alignment_json_path, 'w', encoding='utf-8') as f:
         json.dump(result_aligned, f, ensure_ascii=False, indent=4)
-    print(f"原始对齐结果已保存到: {alignment_json_path}")
-
+    print(f"Raw alignment results saved to: {alignment_json_path}")
 
     # -------------------------------------------------------------
-    # --- 1.5. 导师要求：基于长度的重新分段 ---
+    # 1.5. Resegment by max duration
     # -------------------------------------------------------------
+    print(f"\n--- 1.5. Resegmenting by max duration ({MAX_SEGMENT_DURATION}s) ---")
     
-    print(f"\n--- 1.5. 按最大长度重新分段 (最大{MAX_SEGMENT_DURATION}秒) ---")
-    
-    # 载入刚才保存的完整对齐结果
+    # Load full alignment results
     with open(alignment_json_path, 'r', encoding='utf-8') as f:
         full_aligned_result = json.load(f)
 
-    # 执行重新分段 (使用导师提供的逻辑)
+    # Run resegmentation
     resegmented_result = split_segments_by_length(full_aligned_result)
     
-    # 将重新分段的结果保存到一个新的 JSON 文件
+    # Save resegmented results
     with open(resegmented_json_path, 'w', encoding='utf-8') as f:
         json.dump(resegmented_result, f, ensure_ascii=False, indent=4)
-    print(f"重新分段结果已保存到: {resegmented_json_path}")
+    print(f"Resegmented results saved to: {resegmented_json_path}")
     
 except Exception as e:
-    print(f"!!! WhisperX 运行失败。")
-    print(f"详细错误: {e}")
+    print(f"!!! WhisperX execution failed.")
+    print(f"Error details: {e}")
     sys.exit(1)
 
-
 # -------------------------------------------------------------
-# --- 2. 运行 pyannote 说话人识别 (Speaker Diarization) ---
+# 2. Run Pyannote Speaker Diarization
 # -------------------------------------------------------------
-print("\n--- 2. 运行 pyannote 说话人识别 ---")
+print("\n--- 2. Running Pyannote Speaker Diarization ---")
 
 try:
-    # Colab 环境使用最新版本的 pyannote/speaker-diarization
+    # Load pyannote/speaker-diarization model
+    print("Loading Pyannote Diarization model...")
     diarization_pipeline = Pipeline.from_pretrained("pyannote/speaker-diarization") 
     diarization_pipeline.to(torch.device(device)) 
 
+    # Run diarization
+    print("Starting speaker diarization...")
+    start_time_diar = time.time()
     diarization_result = diarization_pipeline(AUDIO_PATH)
+    end_time_diar = time.time()
+    print(f"Speaker diarization completed in {end_time_diar - start_time_diar:.2f} seconds")
 
-    # 保存说话人识别结果 RTTM
+    # Save diarization results (RTTM format)
     with open(rttm_path, "w") as f:
         diarization_result.write_rttm(f)
-    print(f"说话人识别结果已保存到: {rttm_path}")
+    print(f"Speaker diarization results saved to: {rttm_path}")
     
 except Exception as e:
-    print(f"!!! Pyannote Diarization 运行失败。请务必确认已完成 `huggingface-cli login`。")
-    print(f"详细错误: {e}")
+    print(f"!!! Pyannote Diarization failed. Ensure `huggingface-cli login` is completed.")
+    print(f"Error details: {e}")
     sys.exit(1)
 
-
 # -------------------------------------------------------------
-# --- 4. 执行合并和保存最终结果 ---
+# 4. Merge results and save final output
 # -------------------------------------------------------------
-
 try:
-    # 核心修改：使用重新分段后的 JSON 文件作为输入
+    # Use resegmented JSON as input for merging
     combined_results = merge_and_format(resegmented_json_path, rttm_path) 
 
+    # Save final formatted transcript
     final_output_path = os.path.join(OUTPUT_DIR, f"{BASE_FILENAME}_final_transcript_formatted.txt")
     with open(final_output_path, 'w', encoding='utf-8') as f:
         f.writelines(combined_results)
 
-    print(f"\n✅ 任务完成！最终匹配导师格式的转录文本已保存到: {final_output_path}")
+    print(f"\n✅ Task completed! Final formatted transcript saved to: {final_output_path}")
 
 except Exception as e:
-    print(f"!!! 最终结果合并失败。")
-    print(f"详细错误: {e}")
+    print(f"!!! Final result merging failed.")
+    print(f"Error details: {e}")
     sys.exit(1)
