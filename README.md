@@ -1,8 +1,8 @@
-Armenian Speaker Diarization & Alignment Pipeline
+**Armenian Speaker Diarization & Alignment Pipeline**
 
 This project provides a high-precision pipeline for processing Armenian interview audio. It specializes in resolving complex conversational challenges such as overlapping speech, rapid speaker turns, and semantic repetitions through a customized heuristic alignment engine.
 
-Key Components
+**Key Components**
 
 - **Forced Alignment (FA):** Utilizes **WhisperX (large-v3)** and **Wav2Vec2.0** Armenian models to generate word-level timestamps from raw transcripts.
 - **Advanced Speaker Diarization (SD):** Leverages **Pyannote.audio 3.1** to identify speaker turns with high temporal resolution.
@@ -12,7 +12,7 @@ Key Components
   - Apply "Hard-coded Anchoring" for micro-interjections like "ու" or "հա՞".
 - **Refinement:** Ensures output follows a logical interview flow, maintaining speaker identity consistency over long durations.
 
-Setup and Installation
+**Setup and Installation**
 
 Due to specific dependency requirements between WhisperX and PyTorch, we recommend a dedicated environment.
 
