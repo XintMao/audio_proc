@@ -1,12 +1,16 @@
-# use 'pip install -r requirements.txt --index-url https://download.pytorch.org/whl/cu118' to install
+# Use the following command for installation:
+# pip install -r requirements.txt --index-url https://download.pytorch.org/whl/cu118
 
-torch==2.7.1
-torchvision==0.22.1
-torchaudio==2.7.1
+# Core Deep Learning Frameworks
+torch==2.1.2
+torchvision==0.16.2
+torchaudio==2.1.2
 
-whisperx==3.7.4
-pyannote-audio==3.4.0
+# Specialized Audio Tools
+whisperx==3.1.1
+pyannote.audio==3.1.1
 
+# Processing & Utilities
 transformers
 sentencepiece
 packaging
@@ -23,6 +27,7 @@ pyparsing
 python-dateutil
 pandas==2.2.3 
 
+# Signal Processing
 librosa
 soundfile
 omegaconf
