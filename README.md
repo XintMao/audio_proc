@@ -1,47 +1,34 @@
-**Armenian Speaker Diarization & Alignment Pipeline**
+# Automated Multi-Speaker Audio-Text Alignment Pipeline
 
-This project provides a high-precision pipeline for processing Armenian interview audio. It specializes in resolving complex conversational challenges such as overlapping speech, rapid speaker turns, and semantic repetitions through a customized heuristic alignment engine.
+This project provides a high-precision pipeline designed for processing complex multi-speaker radio broadcasts and interview audio, specifically optimized for Nigerian languages such as Yoruba, Igbo, and Hausa. It specializes in resolving complex conversational challenges including heavy background music (BGM), overlapping speech, rapid speaker turns, and temporal drift through a customized heuristic alignment engine.
 
-**Key Components**
+## Key Components
 
-- **Forced Alignment (FA):** Utilizes **WhisperX (large-v3)** and **Wav2Vec2.0** Armenian models to generate word-level timestamps from raw transcripts.
-- **Advanced Speaker Diarization (SD):** Leverages **Pyannote.audio 3.1** to identify speaker turns with high temporal resolution.
-- **V77 Heuristic Post-Processing:** A custom-engineered logic layer designed to:
-  - Resolve speaker overlaps using intensity-ratio triggers.
-  - Handle "Prompt-Repeat" patterns (e.g., interviewer reminds, guest repeats).
-  - Apply "Hard-coded Anchoring" for micro-interjections like "ու" or "հա՞".
-- **Refinement:** Ensures output follows a logical interview flow, maintaining speaker identity consistency over long durations.
+* **Automatic Speech Recognition (ASR):** Utilizes `faster-whisper` (Large-v3) to generate precise word-level timestamps from raw recordings, exposing crucial Voice Activity Detection (VAD) hyperparameters to handle long pauses.
+* **Advanced Speaker Diarization (SD):** Leverages `pyannote.audio` 3.1 to identify speaker turns and detect conversational boundaries with high temporal resolution.
+* **Speaker Verification:** Integrates `WeSpeaker` (voxceleb backend) to extract unique vocal fingerprints, successfully mapping anonymous AI-detected Speaker IDs to the actual character identities in the text transcripts.
+* **V77 Heuristic Post-Processing:** A custom-engineered logic layer designed to execute a 30-second elastic sliding search window, handle systemic background noise, and eliminate logical deadlocks during complex radio transitions.
 
-**Setup and Installation**
+---
 
-Due to specific dependency requirements between WhisperX and PyTorch, we recommend a dedicated environment.
+## Setup and Installation
 
-1. Recommended Environment
-- **Python:** 3.10
-- **PyTorch:** 2.1.2 (Optimized for CUDA 11.8 stability)
-- **GPU:** NVIDIA GPU with CUDA 11.8+ recommended.
+Due to specific dependency requirements between system modules and PyTorch, we recommend utilizing a dedicated virtual environment.
 
-2. Environment Setup
+### Recommended Environment
+* **Python:** 3.10
+* **PyTorch:** 2.1.2 (Optimized for CUDA 11.8 stability)
+* **GPU:** NVIDIA GPU with CUDA 11.8+ recommended
+
+### Environment Setup
+
 ```bash
 # Create and activate a dedicated Conda environment
-conda create -n armenian_diarization python=3.10 -y
-conda activate armenian_diarization
+conda create -n audio_alignment python=3.10 -y
+conda activate audio_alignment
 
-# Install core dependencies with specific CUDA index
-pip install -r requirements.txt --index-url [https://download.pytorch.org/whl/cu118](https://download.pytorch.org/whl/cu118)
+# Install dependencies using the requirements configuration file
+pip install -r requirement.txt
 
-# Setup Hugging Face (Required for Pyannote model access)
-pip install -U "huggingface-hub[cli]"
-huggingface-cli login
-
-###Repository Structure
-.
-├── data/                    # Input directory
-│   ├── 01_kapital_29_09_25.mp3   # Source Armenian audio
-│   └── 01_kapital_29_09_25.txt   # Complete transcript for alignment
-├── output/                  # Generated results
-│   └── 01_kapital_29_09_25_V77_FINAL_GOLD.txt # Final formatted output
-├── process_pipeline.py      # Standard execution script
-├── process_V77_GOLD.py      # Ultimate heuristic logic version (Recommended)
-├── requirements.txt         # Project dependencies
-└── README.md                # Project documentation
+# Execute the local initialization script to pull required model weights
+bash download.bash
