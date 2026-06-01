@@ -32,3 +32,15 @@ pip install -r requirement.txt
 
 # Execute the local initialization script to pull required model weights
 bash download.bash
+
+├── data/                    # Input directory containing source audio and scripts
+├── requirement.txt          # Defined python package dependencies
+├── download.bash            # Automation script to download and cache model weights locally
+│
+├── process_V77_GOLD.py      # Main Production Script (Recommended)
+│                            # Contains the finalized 30s elastic sliding window logic
+│
+├── process_pipeline.py      # Refactored utility classes and clean pipeline helpers
+│
+├── 01_kapital_29_09_25_V77_FINAL_GOLD.txt # Generated alignment output file
+└── 02tarm11225_V4_FINAL.txt               # Generated alignment output file
